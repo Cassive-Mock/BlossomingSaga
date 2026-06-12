@@ -327,9 +327,14 @@ function sfx(n){ try{ if(SFX[n]) SFX[n](); }catch(e){} }
      fps         playback speed for looping poses
      playOnce    1 = play once, synced to the move's duration
                  (attacks/abilities); leave off for loops.
-   If art sits too high/low or is the wrong size, nudge it with
-   SPRITE_TUNE below (scale, oy, and faceRight if drawn facing
-   LEFT). No code changes needed to swap art — just the files.
+   On-field SIZE is decoupled from your PNG resolution. Each entity
+   declares a target HEIGHT in logical pixels (game is 1280×720
+   logical) in SPRITE_TUNE below — the engine scales whatever you
+   load to match it. A 1920×1920 sprite and a 64×80 sprite draw at
+   the SAME on-field size. Width follows height proportionally.
+     h           target on-field height in logical pixels
+     oy          nudge vertical position (+down, -up)
+     faceRight:false   if your art is drawn facing LEFT
    ============================================================ */
 const ART_DIR = 'art/';
 const SPRITES = {
@@ -359,10 +364,13 @@ const SPRITES = {
    scale: multiply drawn size · oy: nudge down(+)/up(-) in px
    faceRight:false  if your art is drawn facing LEFT.            */
 const SPRITE_TUNE = {
-  warrior:{scale:1,oy:0}, mystic:{scale:1,oy:0}, shadow:{scale:1,oy:0},
-  thrall:{scale:1,oy:0},  blade:{scale:1,oy:0},  wisp:{scale:1,oy:0},
-  brute:{scale:1,oy:0},   shade:{scale:1,oy:0},  dummy:{scale:1,oy:0},
-  kang:{scale:1,oy:0},    maw:{scale:1,oy:0},    warden:{scale:1,oy:0},
+  // h = target ON-FIELD height in logical px (game = 1280×720)
+  warrior:{h:80, oy:0}, mystic:{h:80, oy:0}, shadow:{h:80, oy:0},
+  thrall: {h:70, oy:0}, blade: {h:78, oy:0}, wisp:  {h:52, oy:0},
+  brute:  {h:100,oy:0}, shade: {h:80, oy:0}, dummy: {h:76, oy:0},
+  // bosses keep their base h here; the engine still multiplies the
+  // boss-size factor on top, so big bosses stay crisp.
+  kang:   {h:90, oy:0}, maw:   {h:110,oy:0}, warden:{h:90, oy:0},
 };
 
 const ASSETS = { sheets:{} };           // populated progressively as art loads
@@ -403,10 +411,13 @@ function resolveFoeSheet(f){
   return S[ent+'_'+pose] || S[ent+'_walk'] || S[ent+'_idle'] || null;
 }
 function drawSpriteSheet(g, sh, o, tune){
-  tune = tune || {scale:1, oy:0};
+  tune = tune || {h:80, oy:0};
   const fw = sh.img.width / sh.frames, fh = sh.img.height;
   const fr = sheetFrame(sh, o);
-  const sc = (tune.scale||1) * (o.scale||1);
+  // base scale auto-fits source-resolution → target on-field height.
+  // o.scale carries boss/elite multipliers on top of that.
+  const base = tune.h ? (tune.h / fh) : (tune.scale || 1);
+  const sc = base * (o.scale || 1);
   const dw = fw*sc, dh = fh*sc;
   g.save();
   g.translate(o.x, o.y + (tune.oy||0));
@@ -2206,17 +2217,36 @@ function drawGate(g, x, open){
 }
 
 function drawSignBoard(g, x, lines){
+  // hangs from above the play area — wuxia scroll style
+  const topY = 102;             // crossbar y in screen-space
+  const w = 200, h = 14 + lines.length*17;
+  const panelY = topY + 14;     // panel sits below the bar + cords
   g.save();
-  g.translate(x, GROUND_Y);
-  g.strokeStyle = '#241626'; g.lineWidth = 6; g.lineCap='round';
-  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -64); g.stroke();
-  const w = 196, h = 16 + lines.length*17;
+  g.translate(x, 0);
+  // suspension cords reaching up off-screen
+  g.strokeStyle = 'rgba(255,158,196,.35)'; g.lineWidth = 1; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-w/2+10, topY); g.lineTo(-w/2+10, topY-90); g.stroke();
+  g.beginPath(); g.moveTo( w/2-10, topY); g.lineTo( w/2-10, topY-90); g.stroke();
+  // top rod
+  g.fillStyle = '#241626';
+  g.fillRect(-w/2 - 10, topY, w + 20, 5);
+  g.fillStyle = 'rgba(255,158,196,.5)';
+  g.fillRect(-w/2 - 10, topY, w + 20, 1);
+  // panel
   g.fillStyle = 'rgba(20,14,26,.92)';
-  g.fillRect(-w/2, -64-h, w, h);
+  g.fillRect(-w/2, panelY, w, h);
   g.strokeStyle = 'rgba(255,158,196,.45)'; g.lineWidth = 1;
-  g.strokeRect(-w/2, -64-h, w, h);
-  g.fillStyle = '#e8bcd0'; g.font = "12px 'Segoe UI', system-ui, sans-serif"; g.textAlign='center';
-  lines.forEach((ln,i)=> g.fillText(ln, 0, -64-h+20+i*17));
+  g.strokeRect(-w/2, panelY, w, h);
+  // text
+  g.fillStyle = '#e8bcd0'; g.font = "12px 'Segoe UI', system-ui, sans-serif"; g.textAlign = 'center';
+  lines.forEach((ln,i)=> g.fillText(ln, 0, panelY + 18 + i*17));
+  // bottom finial + tassel
+  g.fillStyle = '#241626';
+  g.fillRect(-w/2 - 6, panelY + h, w + 12, 4);
+  g.strokeStyle = 'rgba(255,158,196,.45)'; g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(0, panelY + h + 4); g.lineTo(0, panelY + h + 14); g.stroke();
+  g.fillStyle = '#ff9ec4';
+  g.beginPath(); g.arc(0, panelY + h + 16, 2.4, 0, Math.PI*2); g.fill();
   g.restore();
 }
 
@@ -2263,11 +2293,11 @@ function renderWorld(){
   if(room.hints){
     const t1 = isTouch ? ['◀ ▶  move', '▲  jump ×2', '≫  dash (i-frames)'] : ['A / D — move', 'SPACE — jump ×2', 'SHIFT — dash (i-frames)'];
     const t2 = isTouch ? ['✿  attack chain', '❀↑ launch · in air: slam', '1 2 3 — techniques'] : ['J — attack chain', 'W+J launch ↑ · S+J slam ↓', '1 2 3 — techniques'];
-    drawSignBoard(g, 330, t1);
-    drawSignBoard(g, 640, t2);
-    drawSignBoard(g, 980, ['Launch → juggle → slam', 'Keep the bloom counter alive', '梅花连舞']);
+    drawSignBoard(g, 460, t1);
+    drawSignBoard(g, 800, t2);
+    drawSignBoard(g, 1140, ['Launch → juggle → slam', 'Keep the bloom counter alive', '梅花连舞']);
   }
-  if(run.training) drawSignBoard(g, 240, ['Training Court', isTouch ? '⏸ then Abandon to leave' : 'Esc → Abandon to leave']);
+  if(run.training) drawSignBoard(g, 380, ['Training Court', isTouch ? '⏸ then Abandon to leave' : 'Esc → Abandon to leave']);
 
   if(!run.training) drawGate(g, room.gateX, room.cleared);
 
