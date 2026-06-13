@@ -1320,6 +1320,30 @@ function newPlayer(){
   };
 }
 const playerBox = ()=> ({x:P.x-15, y:P.y-52, w:30, h:52});
+
+// Enemies are solid bodies. The player can't walk or lunge through a foe that's
+// at the same height — the attack step-forward no longer slips past an approaching
+// mob. You get past a foe by jumping above it (clears once mostly over its head)
+// or dashing through it (dash has i-frames and passes through). Foes walking into
+// a standing player don't shove the player; only the player's own movement is blocked.
+function resolveFoeBlock(prevX){
+  if(P.dashT > 0 || P.dead || !room) return;
+  const moved = P.x - prevX;
+  if(Math.abs(moved) < .4) return;                 // not actively moving → can't be bulldozed
+  const pb = playerBox();
+  for(const f of foes){
+    if(f.dead) continue;
+    const fb = foeBox(f);
+    const vo = Math.min(pb.y+pb.h, fb.y+fb.h) - Math.max(pb.y, fb.y);
+    if(vo <= 16) continue;                          // player mostly above/below → slip over
+    if(prevX <= f.x && moved > 0){                  // came from the left, pushing right into it
+      if(P.x > fb.x - 15){ P.x = fb.x - 15; if(P.vx > 0) P.vx = 0; }
+    } else if(prevX >= f.x && moved < 0){           // came from the right, pushing left into it
+      if(P.x < fb.x + fb.w + 15){ P.x = fb.x + fb.w + 15; if(P.vx < 0) P.vx = 0; }
+    }
+    pb.x = P.x - 15;
+  }
+}
 function foeBox(f){
   const T = ETY[f.type], s = f.scale||1;
   return {x:f.x - T.w*s/2, y:f.y - T.h*s, w:T.w*s, h:T.h*s};
@@ -1644,9 +1668,10 @@ function updatePlayer(dt){
 
   // gravity & integration
   if(!P.grounded && P.dashT<=0 && !(P.act && P.act.frenzy)) P.vy += GRAV*dt;
-  const prevY = P.y;
+  const prevY = P.y, prevX = P.x;
   P.x += P.vx*dt; P.y += P.vy*dt;
   P.x = clamp(P.x, 26, room ? room.w-26 : VW-26);
+  resolveFoeBlock(prevX);
 
   // landing
   P.onPlat = false;
